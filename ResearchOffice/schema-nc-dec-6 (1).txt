@@ -1,0 +1,239 @@
+CREATE ROLE admin;
+CREATE ROLE manager;
+CREATE ROLE faculty;
+CREATE ROLE student;
+
+CREATE TABLE "User" (
+    UserID SERIAL PRIMARY KEY,
+    LastName VARCHAR(50),
+    FirstName VARCHAR(50),
+    MiddleInitial VARCHAR(1),
+    Username VARCHAR(50),
+    Password VARCHAR(255),
+    ContactNo VARCHAR(20),
+    EmailAddress VARCHAR(255),
+    UserRole VARCHAR(20)
+);
+
+CREATE TABLE Department (
+    DepartmentID SERIAL PRIMARY KEY,
+    DepartmentName VARCHAR(100),
+    BuildingNo INT,
+    DepartmentHead VARCHAR(255)
+);
+
+CREATE TABLE USTPResearchWebsite (
+    WebsiteID VARCHAR(255) PRIMARY KEY,
+    WebsiteName VARCHAR(255),
+    URL VARCHAR(500)
+);
+
+CREATE TABLE Staff (
+    StaffID SERIAL PRIMARY KEY,
+    StaffRole VARCHAR(20),
+    UserID INT REFERENCES "User"(UserID)
+);
+
+CREATE TABLE Faculty (
+    FacultyID SERIAL PRIMARY KEY,
+    ProgramAssigned VARCHAR(100),
+    UserID INT REFERENCES "User"(UserID)
+);
+
+CREATE TABLE Student (
+    StudentID SERIAL PRIMARY KEY,
+    StudentType VARCHAR(20),
+    ProgramEnrolled VARCHAR(100),
+    UserID INT REFERENCES "User"(UserID)
+);
+
+CREATE TABLE Collaborates (
+    StudentID INT REFERENCES Student(StudentID),
+    FacultyID INT REFERENCES Faculty(FacultyID),
+    PRIMARY KEY (StudentID, FacultyID)
+);
+
+CREATE TABLE Manager (
+    ManagerID SERIAL PRIMARY KEY,
+    UserID INT REFERENCES "User"(UserID)
+);
+
+CREATE TABLE Tracker (
+    TrackerID SERIAL PRIMARY KEY,
+    UserID INT REFERENCES "User"(UserID)
+);
+
+CREATE TABLE Projects (
+    ProjectID VARCHAR(255) PRIMARY KEY,
+    ProjectTitle VARCHAR(255),
+    StartDate DATE,
+    EndDate DATE,
+    Status VARCHAR(50),
+    DepartmentID INT REFERENCES Department(DepartmentID),
+    ResearcherID INT
+);
+
+CREATE TABLE Researcher (
+    ResearcherID SERIAL PRIMARY KEY,
+    ResearcherType VARCHAR(20),
+    DepartmentID INT REFERENCES Department(DepartmentID),
+    ProjectID VARCHAR(255) REFERENCES Projects(ProjectID),
+    UserID INT REFERENCES "User"(UserID)
+);
+
+CREATE TABLE Journal (
+    JournalID VARCHAR(255) PRIMARY KEY,
+    ArticleTitle VARCHAR(255),
+    JournalTitle VARCHAR(255),
+    PublicationDate DATE,
+    JournalLink VARCHAR(500),
+    ProjectID VARCHAR(255) REFERENCES Projects(ProjectID),
+    ManagerID INT REFERENCES Manager(ManagerID)
+);
+
+CREATE TABLE Submission (
+    SubmissionID VARCHAR(255) PRIMARY KEY,
+    SubmissionDate DATE,
+    ProjectID VARCHAR(255) REFERENCES Projects(ProjectID),
+    JournalID VARCHAR(255) REFERENCES Journal(JournalID),
+    TrackerID INT REFERENCES Tracker(TrackerID)
+);
+
+CREATE TABLE JournalArticle (
+    ResearchID SERIAL PRIMARY KEY,
+    FilePath VARCHAR(500),
+    URL VARCHAR(500),
+    ResearchTitle VARCHAR(255),
+    Abstract TEXT,
+    AuthorNames VARCHAR(500),
+    JournalPublicationDate DATE,
+    JournalID VARCHAR(255) REFERENCES Journal(JournalID),
+    WebsiteID VARCHAR(255) REFERENCES USTPResearchWebsite(WebsiteID),
+    ProjectID VARCHAR(255) REFERENCES Projects(ProjectID)
+
+-- Enable Row-Level Security (RLS) for all relevant tables
+ALTER TABLE "User" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE Department ENABLE ROW LEVEL SECURITY;
+ALTER TABLE Projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE Researcher ENABLE ROW LEVEL SECURITY;
+ALTER TABLE Journal ENABLE ROW LEVEL SECURITY;
+ALTER TABLE Submission ENABLE ROW LEVEL SECURITY;
+ALTER TABLE JournalArticle ENABLE ROW LEVEL SECURITY;
+ALTER TABLE Collaborates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE Staff ENABLE ROW LEVEL SECURITY;
+ALTER TABLE Faculty ENABLE ROW LEVEL SECURITY;
+ALTER TABLE Student ENABLE ROW LEVEL SECURITY;
+ALTER TABLE Manager ENABLE ROW LEVEL SECURITY;
+ALTER TABLE Tracker ENABLE ROW LEVEL SECURITY;
+ALTER TABLE USTPResearchWebsite ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY admin_user_policy ON "User"
+    USING (
+        EXISTS (
+            SELECT 1
+            FROM "User"
+            WHERE "User".UserID = current_setting('app.user_id')::INT
+            AND "User".UserRole = 'Admin'
+        )
+    );
+
+CREATE POLICY admin_department_policy ON Department
+    USING (
+        EXISTS (
+            SELECT 1
+            FROM "User"
+            WHERE "User".UserID = current_setting('app.user_id')::INT
+            AND "User".UserRole = 'Admin'
+        )
+    );
+
+CREATE POLICY admin_projects_policy ON Projects
+    USING (
+        EXISTS (
+            SELECT 1
+            FROM "User"
+            WHERE "User".UserID = current_setting('app.user_id')::INT
+            AND "User".UserRole = 'Admin'
+        )
+    );
+
+CREATE POLICY faculty_project_policy ON Projects
+    USING (
+        EXISTS (
+            SELECT 1
+            FROM "User"
+            JOIN Researcher ON Researcher.UserID = "User".UserID
+            WHERE "User".UserID = current_setting('app.user_id')::INT
+            AND Researcher.DepartmentID = Projects.DepartmentID
+        )
+    );
+
+CREATE POLICY faculty_collaborates_policy ON Collaborates
+    USING (
+        EXISTS (
+            SELECT 1
+            FROM Faculty
+            WHERE Faculty.UserID = current_setting('app.user_id')::INT
+            AND Faculty.FacultyID = Collaborates.FacultyID
+        )
+    );
+
+CREATE POLICY student_collaborates_policy ON Collaborates
+    USING (
+        EXISTS (
+            SELECT 1
+            FROM Student
+            WHERE Student.UserID = current_setting('app.user_id')::INT
+            AND Student.StudentID = Collaborates.StudentID
+        )
+    );
+
+CREATE POLICY manager_submission_policy ON Submission
+    USING (
+        EXISTS (
+            SELECT 1
+            FROM Manager
+            WHERE Manager.UserID = current_setting('app.user_id')::INT
+            AND Manager.ManagerID = Submission.TrackerID
+        )
+    );
+
+CREATE POLICY manager_journal_policy ON Journal
+    USING (
+        EXISTS (
+            SELECT 1
+            FROM Manager
+            WHERE Manager.UserID = current_setting('app.user_id')::INT
+            AND Manager.ManagerID = Journal.ManagerID
+        )
+    );
+
+CREATE POLICY researcher_journal_article_policy ON JournalArticle
+    USING (
+        EXISTS (
+            SELECT 1
+            FROM Researcher
+            WHERE Researcher.UserID = current_setting('app.user_id')::INT
+            AND Researcher.ProjectID = JournalArticle.ProjectID
+        )
+    );
+
+CREATE POLICY admin_journal_article_policy ON JournalArticle
+    USING (
+        EXISTS (
+            SELECT 1
+            FROM "User"
+            WHERE "User".UserID = current_setting('app.user_id')::INT
+            AND "User".UserRole = 'Admin'
+        )
+    );
+
+-- Role grants
+GRANT admin TO "manager";  
+GRANT admin TO "faculty";  
+GRANT admin TO "student";  
+
+GRANT manager TO "faculty";  
+GRANT manager TO "student";  
+
+GRANT faculty TO "student"; 
